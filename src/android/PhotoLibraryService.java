@@ -96,7 +96,23 @@ public class PhotoLibraryService {
   Bitmap bitmap = null;
 
   String imageURL = getImageURL(photoId);
+
+  if (imageURL == null) {
+   int imageId2 = getImageId(photoId);
+
+   //Log.v("PHOTO ID", photoId);
+   //Log.v("imageURL", imageURL);
+   //Log.v("imageId", Integer.toString(imageId2));
+
+
+   byte[] bytesEmpty = new byte[0];
+   return new PictureData(bytesEmpty, "image/jpeg");
+  }
+
+
   File imageFile = new File(imageURL);
+
+
 
   // TODO: maybe it never worth using MediaStore.Images.Thumbnails.getThumbnail, as it returns sizes less than 512x384?
   if (thumbnailWidth == 512 && thumbnailHeight == 384) { // In such case, thumbnail will be cached by MediaStore
@@ -158,6 +174,13 @@ public class PhotoLibraryService {
 
   int imageId = getImageId(photoId);
   String imageURL = getImageURL(photoId);
+
+
+  if (imageURL == null || imageId == -1) {
+   byte[] bytesEmpty = new byte[0];
+   InputStream streamEmpty = new ByteArrayInputStream(bytesEmpty);
+   return new PictureAsStream(streamEmpty, "image/jpeg");
+  }
   File imageFile = new File(imageURL);
   Uri imageUri = Uri.fromFile(imageFile);
 
@@ -493,14 +516,57 @@ public class PhotoLibraryService {
 
  }
 
+ private static String decodePhotoIdURL(String photoId) {
+  if (photoId == null) return photoId;
+  String[] parts = photoId.split(";");
+
+  //Log.e("decodePhotoIdURL", Integer.toString(parts.length));
+
+  if (parts.length == 1) { //parfois on recoit 118607%3B%2Fstorage%2Femulated%2F0%2FDCIM%2FImages%2Fwashington%20avant%2F20993929_1644849542257108_801754638464679218_n.jpg au lieu de 118607;/storage/emulated/0/DCIM/Images/washington avant/20993929_1644849542257108_801754638464679218_n.jpg
+   try {
+    String result = URLDecoder.decode(photoId, "UTF-8");
+    //	Log.e("decodePhotoIdURL result decode", result);
+
+    return result;
+   } catch (UnsupportedEncodingException e) {
+    return null;
+   }
+  } else {
+
+   //	Log.e("decodePhotoIdURL parsLengh >0 photoId:", parts[0]);
+
+   return photoId;
+  }
+ }
+
  // photoId is in format "imageid;imageurl;[swap]"
  private static int getImageId(String photoId) {
-  return Integer.parseInt(photoId.split(";")[0]);
+  photoId = decodePhotoIdURL(photoId);
+
+  if (photoId == null) return -1;
+
+  String[] parts = photoId.split(";");
+  // try {
+  //  Log.e("Part0", parts[0]);
+  try {
+   return parts.length >= 1 ? Integer.parseInt(parts[0]) : -1;
+  } catch (Exception e) {
+   return -1;
+  }
+  /*} catch(Exception e) {
+    return -1;
+  }*/
+  // return Integer.parseInt(photoId.split(";")[0]);
  }
 
  // photoId is in format "imageid;imageurl;[swap]"
  private static String getImageURL(String photoId) {
-  return photoId.split(";")[1];
+  photoId = decodePhotoIdURL(photoId);
+
+  if (photoId == null || photoId.length() == 0) return null;
+
+  String[] parts = photoId.split(";");
+  return parts.length >= 2 ? parts[1] : null;
  }
 
  private static int getImageOrientation(File imageFile) throws IOException {

@@ -43,6 +43,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.TimeZone;
 
 public class PhotoLibraryService {
 
@@ -50,9 +51,10 @@ public class PhotoLibraryService {
  //int cacheSize = 4 * 1024 * 1024; // 4MB
  //private LruCache<String, byte[]> imageCache = new LruCache<String, byte[]>(cacheSize);
 
- protected PhotoLibraryService() {
-  dateFormatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
- }
+  protected PhotoLibraryService() {
+    dateFormatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+    dateFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
+  }
 
  public static final String PERMISSION_ERROR = "Permission Denial: This application is not allowed to access Photo data.";
 

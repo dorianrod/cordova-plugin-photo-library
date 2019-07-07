@@ -1,4 +1,4 @@
-var exec = require('cordova/exec');
+//var exec = require('cordova/exec');
 
 var async = cordova.require('cordova-plugin-photo-library.async');
 
@@ -19,6 +19,9 @@ photoLibrary.getLibrary = function (success, error, options) {
   }
 
   options = {
+    dateStart: options.dateStart || null,
+    dateEnd: options.dateEnd || null,
+    id_search: options.id_search || null,
     thumbnailWidth: options.thumbnailWidth || defaultThumbnailWidth,
     thumbnailHeight: options.thumbnailHeight || defaultThumbnailHeight,
     quality: options.quality || defaultQuality,

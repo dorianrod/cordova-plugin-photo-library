@@ -34,6 +34,7 @@ import java.io.OutputStream;
 import java.net.URI;
 import java.net.URL;
 import java.net.URISyntaxException;
+import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -71,7 +72,24 @@ public class PhotoLibraryService {
 
  public void getLibrary(Context context, PhotoLibraryGetLibraryOptions options, ChunkResultRunnable completion) throws JSONException {
 
-  String whereClause = "";
+  Calendar c = Calendar.getInstance();
+  Date date2 = c.getTime();
+  c.add(Calendar.MONTH,-1);
+  Date date1 = c.getTime();
+
+  String whereClause = "";//MediaStore.MediaColumns.DATE_ADDED + ">=" + date1.getTime() / 1000;
+
+
+  if(options.dateStart != null && options.dateEnd != null) {
+      whereClause = MediaStore.MediaColumns.DATE_ADDED + ">=" + options.dateStart + " and " + MediaStore.MediaColumns.DATE_ADDED + "<=" + options.dateEnd;
+  } else if(options.dateStart == null && options.dateEnd != null) {
+      whereClause = MediaStore.MediaColumns.DATE_ADDED + "<=" + options.dateEnd;
+  } else if(options.dateStart == null && options.dateEnd != null) {
+      whereClause = MediaStore.MediaColumns.DATE_ADDED + ">=" + options.dateStart;
+  }
+
+  Log.i("whereClause", whereClause);
+
   queryLibrary(context, options.itemsInChunk, options.chunkTimeSec, options.includeAlbumData, whereClause, completion);
 
  }
@@ -93,27 +111,59 @@ public class PhotoLibraryService {
 
  }
 
+ public PictureData getEmptyPicture() {
+     byte[] bytesEmpty = new byte[0];
+     return new PictureData(bytesEmpty, "image/jpeg");
+ }
+
  public PictureData getThumbnail(Context context, String photoId, int thumbnailWidth, int thumbnailHeight, double quality) throws IOException {
 
-  Bitmap bitmap = null;
+    Bitmap bitmap;
 
-  String imageURL = getImageURL(photoId);
+    String imageURL = getImageURL(photoId);
 
-  if (imageURL == null) {
-   int imageId2 = getImageId(photoId);
+    if (imageURL == null) {
+        return getEmptyPicture();
+    }
 
-   //Log.v("PHOTO ID", photoId);
-   //Log.v("imageURL", imageURL);
-   //Log.v("imageId", Integer.toString(imageId2));
+    try {
+        bitmap = BitmapFactory.decodeFile(imageURL);
+        bitmap = ThumbnailUtils.extractThumbnail(bitmap, thumbnailWidth, thumbnailHeight,
+        ThumbnailUtils.OPTIONS_RECYCLE_INPUT);
 
+        byte[] bytes = getJpegBytesFromBitmap(bitmap, quality);
+        String mimeType = "image/jpeg";
 
-   byte[] bytesEmpty = new byte[0];
-   return new PictureData(bytesEmpty, "image/jpeg");
-  }
+        return new PictureData(bytes, mimeType);
+    } catch (Exception e) {
+        e.printStackTrace();
+        return null;
+    } catch (OutOfMemoryError o) {
+        return getEmptyPicture();
+    }
 
+//https://stackoverflow.com/questions/4989182/converting-java-bitmap-to-byte-array
+  //final int THUMBSIZE = 64;
+  //bitmap = ThumbnailUtils.extractThumbnail(BitmapFactory.decodeFile(imageURL), thumbnailWidth, thumbnailHeight);
 
+  //   bitmap = ThumbnailUtils.createImageThumbnail()
+  //int width = bitmap.getWidth();
+ // int height = bitmap.getHeight();
+
+  /*
+  int size = bitmap.getRowBytes() * bitmap.getHeight();
+  ByteBuffer byteBuffer = ByteBuffer.allocate(size);
+  bitmap.copyPixelsToBuffer(byteBuffer);*/
+
+//  byte[] bytes = getJpegBytesFromBitmap(bitmap, 1);
+  //String mimeType = "image/jpeg";
+//
+ // bitmap.recycle();
+
+//  return new PictureData(bytes, mimeType);
+
+  /*
   File imageFile = new File(imageURL);
-
 
 
   // TODO: maybe it never worth using MediaStore.Images.Thumbnails.getThumbnail, as it returns sizes less than 512x384?
@@ -168,7 +218,7 @@ public class PhotoLibraryService {
 
   }
 
-  return null;
+  return null;*/
 
  }
 
@@ -424,10 +474,14 @@ public class PhotoLibraryService {
 
    chunk.add(queryResult);
 
+
    if (i == queryResults.size() - 1) { // Last item
+       Log.d("resPhotos", "lastchunk");
     completion.run(chunk, chunkNum, true);
    } else if ((itemsInChunk > 0 && chunk.size() == itemsInChunk) || (chunkTimeSec > 0 && (SystemClock.elapsedRealtime() - chunkStartTime) >= chunkTimeSec * 1000)) {
-    completion.run(chunk, chunkNum, false);
+
+       Log.d("resPhotos", "size:" + chunk.size());
+       completion.run(chunk, chunkNum, false);
     chunkNum += 1;
     chunk = new ArrayList < JSONObject > ();
     chunkStartTime = SystemClock.elapsedRealtime();
@@ -579,10 +633,14 @@ public class PhotoLibraryService {
 
  private static int getImageOrientation(File imageFile) throws IOException {
 
-  ExifInterface exif = new ExifInterface(imageFile.getAbsolutePath());
-  int orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+  try {
+   ExifInterface exif = new ExifInterface(imageFile.getAbsolutePath());
+   int orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
 
-  return orientation;
+   return orientation;
+  } catch(IOException e) {
+   return ExifInterface.ORIENTATION_NORMAL;
+  }
 
  }
 

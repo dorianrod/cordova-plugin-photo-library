@@ -1,5 +1,5 @@
 package com.terikon.cordova.photolibrary;
-
+import java.util.Random;
 import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
@@ -56,26 +56,47 @@ public class PhotoLibrary extends CordovaPlugin {
    if (ACTION_GET_LIBRARY.equals(action)) {
     cordova.getThreadPool().execute(new Runnable() {
      public void run() {
-      try {
+        try {
+            Long dateStart = null;
+            Long dateEnd = null;
+            final JSONObject options = args.optJSONObject(0);
+            try {
+                dateStart = options.getLong("dateStart");
+            } catch(Exception e) {
+                //
+            }
+            try {
+                dateEnd = options.getLong("dateEnd");
+            } catch(Exception e) {
+                //
+            }
 
-       final JSONObject options = args.optJSONObject(0);
-       final int itemsInChunk = options.getInt("itemsInChunk");
-       final double chunkTimeSec = options.getDouble("chunkTimeSec");
-       final boolean includeAlbumData = options.getBoolean("includeAlbumData");
+            final int itemsInChunk = options.getInt("itemsInChunk");
+            final double chunkTimeSec = options.getDouble("chunkTimeSec");
+            final boolean includeAlbumData = options.getBoolean("includeAlbumData");
 
-       if (!cordova.hasPermission(READ_EXTERNAL_STORAGE)) {
-        callbackContext.error(service.PERMISSION_ERROR);
-        return;
-       }
+           if (!cordova.hasPermission(READ_EXTERNAL_STORAGE)) {
+                callbackContext.error(service.PERMISSION_ERROR);
+                return;
+           }
 
-       PhotoLibraryGetLibraryOptions getLibraryOptions = new PhotoLibraryGetLibraryOptions(itemsInChunk, chunkTimeSec, includeAlbumData);
+           Long id_search_v = null;
+           try {
+            id_search_v = options.getLong("id_search");
+           } catch(Exception e) {
+             //
+           }
+
+           final Long id_search = id_search_v;
+
+           PhotoLibraryGetLibraryOptions getLibraryOptions = new PhotoLibraryGetLibraryOptions(itemsInChunk, chunkTimeSec, includeAlbumData, dateStart, dateEnd, id_search);
 
        service.getLibrary(getContext(), getLibraryOptions, new PhotoLibraryService.ChunkResultRunnable() {
         @Override
         public void run(ArrayList < JSONObject > library, int chunkNum, boolean isLastChunk) {
          try {
 
-          JSONObject result = createGetLibraryResult(library, chunkNum, isLastChunk);
+          JSONObject result = createGetLibraryResult(library, chunkNum, isLastChunk, id_search);
           PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, result);
           pluginResult.setKeepCallback(!isLastChunk);
           callbackContext.sendPluginResult(pluginResult);
@@ -395,11 +416,12 @@ public class PhotoLibrary extends CordovaPlugin {
   return new JSONArray(albums);
  }
 
- private static JSONObject createGetLibraryResult(ArrayList < JSONObject > library, int chunkNum, boolean isLastChunk) throws JSONException {
+ private static JSONObject createGetLibraryResult(ArrayList < JSONObject > library, int chunkNum, boolean isLastChunk, Long id) throws JSONException {
   JSONObject result = new JSONObject();
   result.put("chunkNum", chunkNum);
   result.put("isLastChunk", isLastChunk);
   result.put("library", new JSONArray(library));
+  result.put("id", id);
   return result;
  }
 

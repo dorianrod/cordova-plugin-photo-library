@@ -42,7 +42,7 @@ public class PhotoLibrary extends CordovaPlugin {
  protected void pluginInitialize() {
   super.pluginInitialize();
 
-  service = PhotoLibraryService.getInstance();
+  service = PhotoLibraryService.getInstance(getContext());
 
  }
 

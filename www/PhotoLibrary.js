@@ -341,6 +341,10 @@ var parseDates = function (library) {
 var addUrlsToLibrary = function (library, callback, options) {
 
   var urlsLeft = library.length;
+  if(urlsLeft == 0) {
+    callback(library);
+    return;
+  }
 
   var handlePhotoURL = function (libraryItem, photoURL) {
     libraryItem.photoURL = photoURL;

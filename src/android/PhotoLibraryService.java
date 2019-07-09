@@ -18,6 +18,8 @@ import android.os.SystemClock;
 import android.provider.MediaStore;
 import android.util.Base64;
 
+import com.dorian.cordova.cacheurl.BytesCache;
+
 import org.apache.cordova.CordovaInterface;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -26,15 +28,12 @@ import org.json.JSONObject;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.URI;
 import java.net.URL;
 import java.net.URISyntaxException;
-import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -50,37 +49,24 @@ import java.util.TimeZone;
 
 
 public class PhotoLibraryService {
-
- /*
-  public byte[] convertBitmapToBytes(Bitmap bitmap) {
-   try {
-    ByteBuffer buffer = ByteBuffer.allocate(bitmap.getByteCount());
-    bitmap.copyPixelsToBuffer(buffer);
-    return buffer.array();
-   } catch(Exception e) {
-    byte[] bytesEmpty = new byte[0];
-    return bytesEmpty;
-   }
-  }*/
-
-    // TODO: implement cache
-    //int cacheSize = 4 * 1024 * 1024; // 4MB
-    //private LruCache<String, byte[]> imageCache = new LruCache<String, byte[]>(cacheSize);
-
+    BytesCache cache = null;
     String TAG = "PhotoLibraryService";
 
-    protected PhotoLibraryService() {
+    protected PhotoLibraryService(Context context) {
         dateFormatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
         dateFormatter.setTimeZone(TimeZone.getTimeZone("UTC"));
+
+        cache = BytesCache.getInstance(context);
+        cache.clear("photos", 700);
     }
 
     public static final String PERMISSION_ERROR = "Permission Denial: This application is not allowed to access Photo data.";
 
-    public static PhotoLibraryService getInstance() {
+    public static PhotoLibraryService getInstance(Context context) {
         if (instance == null) {
             synchronized(PhotoLibraryService.class) {
                 if (instance == null) {
-                    instance = new PhotoLibraryService();
+                    instance = new PhotoLibraryService(context);
                 }
             }
         }
@@ -134,6 +120,7 @@ public class PhotoLibraryService {
     }
 
     public PictureData getThumbnail(Context context, String photoId, int thumbnailWidth, int thumbnailHeight, double quality) throws IOException {
+        String directory = "photos";
         String mimeType = "image/jpeg";
         byte[] bytes = null;
         Bitmap bitmap = null;
@@ -142,8 +129,9 @@ public class PhotoLibraryService {
         String imageURL = getImageURL(photoId);
 
         startTime = System.currentTimeMillis();
-        BytesCache cache = new BytesCache();
-        bytes = cache.get(context, imageURL);
+
+        bytes = this.cache.get(context, imageURL, directory);
+
         if (bytes != null) {
             Log.d(TAG, "Retrieve cache bytes: " + (System.currentTimeMillis() - startTime));
             return new PictureData(bytes, mimeType);
@@ -167,8 +155,10 @@ public class PhotoLibraryService {
             Log.d(TAG, "Get bytes from bitmap: " + (System.currentTimeMillis() - startTime));
 
             startTime = System.currentTimeMillis();
-            cache.put(context, imageURL, bytes);
+            this.cache.put(context, imageURL, bytes, directory);
             Log.d(TAG, "Save bytes: " + (System.currentTimeMillis() - startTime));
+
+            bitmap.recycle();
 
             return new PictureData(bytes, mimeType);
         } catch (Exception e) {
@@ -399,53 +389,61 @@ public class PhotoLibraryService {
         long chunkStartTime = SystemClock.elapsedRealtime();
         int chunkNum = 0;
 
-        for (int i = 0; i < queryResults.size(); i++) {
-            JSONObject queryResult = queryResults.get(i);
+        int size = queryResults.size();
 
-            // swap width and height if needed
-            try {
-                int orientation = getImageOrientation(new File(queryResult.getString("nativeURL")));
-                if (isOrientationSwapsDimensions(orientation)) { // swap width and height
-                    int tempWidth = queryResult.getInt("width");
-                    queryResult.put("width", queryResult.getInt("height"));
-                    queryResult.put("height", tempWidth);
+        if(size == 0) {
+
+            completion.run(chunk, chunkNum, true);
+
+        } else {
+
+            for (int i = 0; i < size; i++) {
+                JSONObject queryResult = queryResults.get(i);
+
+                // swap width and height if needed
+                try {
+                    int orientation = getImageOrientation(new File(queryResult.getString("nativeURL")));
+                    if (isOrientationSwapsDimensions(orientation)) { // swap width and height
+                        int tempWidth = queryResult.getInt("width");
+                        queryResult.put("width", queryResult.getInt("height"));
+                        queryResult.put("height", tempWidth);
+                    }
+                } catch (IOException e) {
+                    // Do nothing
                 }
-            } catch (IOException e) {
-                // Do nothing
+
+                // photoId is in format "imageid;imageurl"
+                queryResult.put("id",
+                        queryResult.get("id") + ";" +
+                                queryResult.get("nativeURL"));
+
+                queryResult.remove("nativeURL"); // Not needed
+
+                String albumId = queryResult.getString("albumId");
+                queryResult.remove("albumId");
+                if (includeAlbumData) {
+                    JSONArray albumsArray = new JSONArray();
+                    albumsArray.put(albumId);
+                    queryResult.put("albumIds", albumsArray);
+                }
+
+                chunk.add(queryResult);
+
+
+                if (i == queryResults.size() - 1) { // Last item
+                    Log.d("resPhotos", "lastchunk");
+                    completion.run(chunk, chunkNum, true);
+                } else if ((itemsInChunk > 0 && chunk.size() == itemsInChunk) || (chunkTimeSec > 0 && (SystemClock.elapsedRealtime() - chunkStartTime) >= chunkTimeSec * 1000)) {
+
+                    Log.d("resPhotos", "size:" + chunk.size());
+                    completion.run(chunk, chunkNum, false);
+                    chunkNum += 1;
+                    chunk = new ArrayList<JSONObject>();
+                    chunkStartTime = SystemClock.elapsedRealtime();
+                }
+
             }
-
-            // photoId is in format "imageid;imageurl"
-            queryResult.put("id",
-                    queryResult.get("id") + ";" +
-                            queryResult.get("nativeURL"));
-
-            queryResult.remove("nativeURL"); // Not needed
-
-            String albumId = queryResult.getString("albumId");
-            queryResult.remove("albumId");
-            if (includeAlbumData) {
-                JSONArray albumsArray = new JSONArray();
-                albumsArray.put(albumId);
-                queryResult.put("albumIds", albumsArray);
-            }
-
-            chunk.add(queryResult);
-
-
-            if (i == queryResults.size() - 1) { // Last item
-                Log.d("resPhotos", "lastchunk");
-                completion.run(chunk, chunkNum, true);
-            } else if ((itemsInChunk > 0 && chunk.size() == itemsInChunk) || (chunkTimeSec > 0 && (SystemClock.elapsedRealtime() - chunkStartTime) >= chunkTimeSec * 1000)) {
-
-                Log.d("resPhotos", "size:" + chunk.size());
-                completion.run(chunk, chunkNum, false);
-                chunkNum += 1;
-                chunk = new ArrayList < JSONObject > ();
-                chunkStartTime = SystemClock.elapsedRealtime();
-            }
-
         }
-
     }
 
     private String queryMimeType(Context context, int imageId) {

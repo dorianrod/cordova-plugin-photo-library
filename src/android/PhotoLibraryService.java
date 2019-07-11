@@ -19,6 +19,7 @@ import android.provider.MediaStore;
 import android.util.Base64;
 
 import com.dorian.cordova.cacheurl.BytesCache;
+import com.dorian.cordova.cacheurl.CachedData;
 
 import org.apache.cordova.CordovaInterface;
 import org.json.JSONArray;
@@ -45,7 +46,55 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.TimeZone;
 
+class PictureCachedData extends CachedData {
+    private String TAG = "PictureCachedData";
 
+    private Integer width;
+    private Integer height;
+    private double quality;
+
+    private static byte[] getJpegBytesFromBitmap(Bitmap bitmap, double quality) {
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.JPEG, (int)(quality * 100), stream);
+        return stream.toByteArray();
+    }
+
+    public PictureCachedData(byte[] bytes, String extension, int w, int h, double q) {
+        super(bytes, extension);
+        width = w;
+        height = h;
+        quality = q;
+    }
+
+    public byte[] loadBytes(Context context, String imageURL, String cleanUrl) throws IOException {
+        Bitmap bitmap = null;
+        long startTime       = System.currentTimeMillis();
+
+        try {
+            bitmap = ThumbnailUtils.extractThumbnail(BitmapFactory.decodeFile(imageURL), width, height,
+                    ThumbnailUtils.OPTIONS_RECYCLE_INPUT);
+            Log.d(TAG, "Extract thumbnail: " + (System.currentTimeMillis() - startTime));
+
+            startTime = System.currentTimeMillis();
+            bytes = getJpegBytesFromBitmap(bitmap, quality);
+            Log.d(TAG, "Get bytes from bitmap: " + (System.currentTimeMillis() - startTime));
+
+            startTime = System.currentTimeMillis();
+            //this.cache.put(context, imageURL, bytes, directory);
+            Log.d(TAG, "Save bytes: " + (System.currentTimeMillis() - startTime));
+
+            bitmap.recycle();
+
+            return bytes;
+        } catch (Exception e) {
+            Log.e(TAG, e.getMessage());
+        } catch (OutOfMemoryError o) {
+            Log.e(TAG, o.getMessage());
+        }
+
+        throw new IOException("Unable to load library thumbnail");
+    }
+}
 
 
 public class PhotoLibraryService {
@@ -119,55 +168,17 @@ public class PhotoLibraryService {
         return new PictureData(bytesEmpty, "image/jpeg");
     }
 
-    public PictureData getThumbnail(Context context, String photoId, int thumbnailWidth, int thumbnailHeight, double quality) throws IOException {
-        String directory = "photos";
-        String mimeType = "image/jpeg";
-        byte[] bytes = null;
-        Bitmap bitmap = null;
-        long startTime;
-
-        String imageURL = getImageURL(photoId);
-
-        startTime = System.currentTimeMillis();
-
-        bytes = this.cache.get(context, imageURL, directory);
-
-        if (bytes != null) {
-            Log.d(TAG, "Retrieve cache bytes: " + (System.currentTimeMillis() - startTime));
-            return new PictureData(bytes, mimeType);
-        }
-
-        if (imageURL == null) {
-            return getEmptyPicture();
-        }
-
+    public PictureData getThumbnail(Context context, String photoId, int thumbnailWidth, int thumbnailHeight, double quality) {
 
         try {
-            if (bitmap == null) {
-                startTime = System.currentTimeMillis();
-                bitmap = ThumbnailUtils.extractThumbnail(BitmapFactory.decodeFile(imageURL), thumbnailWidth, thumbnailHeight,
-                        ThumbnailUtils.OPTIONS_RECYCLE_INPUT);
-                Log.d(TAG, "Extract thumbnail: " + (System.currentTimeMillis() - startTime));
-            }
+            String imageURL = getImageURL(photoId);
+            PictureCachedData cachedData = new PictureCachedData(null, "jpeg", thumbnailWidth, thumbnailHeight, quality);
+            CachedData data = cache.get(imageURL, "photos", cachedData);
+            return new PictureData(data.bytes, data.getMimeType());
 
-            startTime = System.currentTimeMillis();
-            bytes = getJpegBytesFromBitmap(bitmap, quality);
-            Log.d(TAG, "Get bytes from bitmap: " + (System.currentTimeMillis() - startTime));
-
-            startTime = System.currentTimeMillis();
-            this.cache.put(context, imageURL, bytes, directory);
-            Log.d(TAG, "Save bytes: " + (System.currentTimeMillis() - startTime));
-
-            bitmap.recycle();
-
-            return new PictureData(bytes, mimeType);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return getEmptyPicture();
-        } catch (OutOfMemoryError o) {
+        } catch(IOException e) {
             return getEmptyPicture();
         }
-
     }
 
     public PictureAsStream getEmptyStream() {

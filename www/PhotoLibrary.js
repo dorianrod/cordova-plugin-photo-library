@@ -38,14 +38,15 @@ photoLibrary.getLibrary = function (success, error, options) {
   // queue that keeps order of async processing
   var q = async.queue(function(chunk, done) {
 
-    var library = chunk.library;
-    var isLastChunk = chunk.isLastChunk;
-
-    processLibrary(library, function(library) {
-      var result = { library: library, isLastChunk: isLastChunk };
-      success(result);
-      done();
-    }, options);
+      var library = chunk.library;
+      var isLastChunk = chunk.isLastChunk;
+      var id_search = chunk.id_search;
+      
+      processLibrary(library, function(library) {
+                     var result = { library: library, isLastChunk: isLastChunk, id_search: id_search };
+                     success(result);
+                     done();
+                     }, options);
 
   });
 

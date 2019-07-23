@@ -17,6 +17,10 @@ import Foundation
         NSLog("-- MEMORY WARNING --")
     }
     
+    static func getServiceInstance() -> PhotoLibraryService {
+        let service = PhotoLibraryService.instance
+        return service
+    }
     
     // Will sort by creation date
     func getLibrary(_ command: CDVInvokedUrlCommand) {

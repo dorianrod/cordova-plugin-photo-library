@@ -2,6 +2,8 @@ import Photos
 import Foundation
 import AssetsLibrary // TODO: needed for deprecated functionality
 import MobileCoreServices
+import WebKit
+
 
 extension PHAsset {
 
@@ -26,7 +28,7 @@ extension PHAsset {
 
 }
 
-final class PhotoLibraryService {
+@objc(PhotoLibraryService) class PhotoLibraryService: NSObject {
 
     let fetchOptions: PHFetchOptions!
     let thumbnailRequestOptions: PHImageRequestOptions!
@@ -61,7 +63,7 @@ final class PhotoLibraryService {
 
     let assetCollectionTypes = [PHAssetCollectionType.album, PHAssetCollectionType.smartAlbum/*, PHAssetCollectionType.moment*/]
 
-    fileprivate init() {
+    override fileprivate init() {
         fetchOptions = PHFetchOptions()
         fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         fetchOptions.fetchLimit = 2000;
@@ -295,6 +297,18 @@ final class PhotoLibraryService {
     private func assetToLibraryItem(asset: PHAsset, useOriginalFileNames: Bool, includeAlbumData: Bool) -> NSMutableDictionary {
         let libraryItem = NSMutableDictionary()
         
+        /*
+        var imageSize = CGSize(width: 100, height: 100)
+        
+        var options = PHImageRequestOptions()
+        options.resizeMode = PHImageRequestOptionsResizeMode.exact
+        options.deliveryMode = PHImageRequestOptionsDeliveryMode.opportunistic
+        
+        PHImageManager.default().requestImage(for: asset, targetSize: imageSize, contentMode: .aspectFill, options: options, resultHandler: {(result, info) in
+            let image = result;
+            let b = info;
+        })
+        */
         libraryItem["id"] = asset.localIdentifier
         libraryItem["fileName"] = useOriginalFileNames ? asset.originalFileName : asset.fileName // originalFilename is much slower
         libraryItem["width"] = asset.pixelWidth

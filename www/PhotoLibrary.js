@@ -38,14 +38,15 @@ photoLibrary.getLibrary = function (success, error, options) {
   // queue that keeps order of async processing
   var q = async.queue(function(chunk, done) {
 
-    var library = chunk.library;
-    var isLastChunk = chunk.isLastChunk;
-
-    processLibrary(library, function(library) {
-      var result = { library: library, isLastChunk: isLastChunk };
-      success(result);
-      done();
-    }, options);
+      var library = chunk.library;
+      var isLastChunk = chunk.isLastChunk;
+      var id_search = chunk.id_search;
+      
+      processLibrary(library, function(library) {
+                     var result = { library: library, isLastChunk: isLastChunk, id_search: id_search };
+                     success(result);
+                     done();
+                     }, options);
 
   });
 
@@ -119,7 +120,8 @@ photoLibrary.getThumbnailURL = function (photoIdOrLibraryItem, success, error, o
     '&width=' + fixedEncodeURIComponent(options.thumbnailWidth) +
     '&height=' + fixedEncodeURIComponent(options.thumbnailHeight) +
     '&quality=' + fixedEncodeURIComponent(options.quality);
-  var thumbnailURL = 'cdvphotolibrary://thumbnail?' + urlParams;
+
+  var thumbnailURL = cordova.platformId == 'ios' ? window.WEBVIEW_SERVER_URL + '/cdvphotolibrary/thumbnail?' + urlParams : 'cdvphotolibrary://thumbnail?' + urlParams;
 
   if (success) {
     if (isBrowser) {
@@ -149,7 +151,8 @@ photoLibrary.getPhotoURL = function (photoIdOrLibraryItem, success, error, optio
   }
 
   var urlParams = 'photoId=' + fixedEncodeURIComponent(photoId);
-  var photoURL = 'cdvphotolibrary://photo?' + urlParams;
+
+  var photoURL = cordova.platformId == 'ios' ? window.WEBVIEW_SERVER_URL + '/cdvphotolibrary/photo?' + urlParams : 'cdvphotolibrary://photo?' + urlParams;
 
   if (success) {
     if (isBrowser) {

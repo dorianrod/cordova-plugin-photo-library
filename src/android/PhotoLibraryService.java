@@ -136,7 +136,7 @@ public class PhotoLibraryService {
             whereClause = MediaStore.MediaColumns.DATE_ADDED + ">=" + options.dateStart + " and " + MediaStore.MediaColumns.DATE_ADDED + "<=" + options.dateEnd;
         } else if (options.dateStart == null && options.dateEnd != null) {
             whereClause = MediaStore.MediaColumns.DATE_ADDED + "<=" + options.dateEnd;
-        } else if (options.dateStart == null && options.dateEnd != null) {
+        } else if (options.dateStart != null && options.dateEnd == null) {
             whereClause = MediaStore.MediaColumns.DATE_ADDED + ">=" + options.dateStart;
         }
 

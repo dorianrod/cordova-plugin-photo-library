@@ -168,12 +168,13 @@ public class PhotoLibraryService {
         return new PictureData(bytesEmpty, "image/jpeg");
     }
 
-    public PictureData getThumbnail(Context context, String photoId, int thumbnailWidth, int thumbnailHeight, double quality) {
+    public PictureData getThumbnail(Context context, String photoId, int thumbnailWidth, int thumbnailHeight, double quality, boolean useCache) {
 
         try {
             String imageURL = getImageURL(photoId);
             PictureCachedData cachedData = new PictureCachedData(null, "jpeg", thumbnailWidth, thumbnailHeight, quality);
-            CachedData data = cache.get(imageURL, "photos", cachedData);
+
+            CachedData data = cache.get(imageURL, "photos", cachedData, useCache);
             return new PictureData(data.bytes, data.getMimeType());
 
         } catch(IOException e) {
@@ -188,6 +189,9 @@ public class PhotoLibraryService {
     }
 
     public PictureAsStream getPhotoAsStream(Context context, String photoId) throws IOException {
+        return getPhotoAsStream(context, photoId, null, null);
+    }
+    public PictureAsStream getPhotoAsStream(Context context, String photoId, Integer maxWidth, Integer maxHeight) throws IOException {
         try {
             int imageId = getImageId(photoId);
             String imageURL = getImageURL(photoId);
@@ -195,6 +199,8 @@ public class PhotoLibraryService {
             if (imageURL == null || imageId == -1) {
                 return this.getEmptyStream();
             }
+           // maxWidth = 200;
+          //  maxHeight = 200;
 
             File imageFile = new File(imageURL);
             Uri imageUri = Uri.fromFile(imageFile);
@@ -204,21 +210,42 @@ public class PhotoLibraryService {
             InputStream is = context.getContentResolver().openInputStream(imageUri);
 
             if (mimeType.equals("image/jpeg")) {
+                Bitmap bitmap = null;
+
+                //Resize if needed
+                if(maxWidth != null || maxHeight != null) {
+                    BitmapFactory.Options options = new BitmapFactory.Options();
+                    options.inJustDecodeBounds = true;
+                    BitmapFactory.decodeFile(imageFile.getAbsolutePath(), options);
+                    int imageHeight = options.outHeight;
+                    int imageWidth = options.outWidth;
+
+                    bitmap = BitmapFactory.decodeStream(is, null, null);
+
+                    Integer threshold = Math.max(maxWidth == null ? 0 : maxWidth, maxHeight == null ? 0 : maxHeight);
+                    if(threshold != null && (imageWidth > threshold  || imageHeight > threshold)) {
+                        bitmap = getScaledDownBitmap(bitmap, threshold, true );
+                    }
+                }
+
+                //Reorient if needed
                 int orientation = getImageOrientation(imageFile);
                 if (orientation > 1) { // Image should be rotated
-
-                    Bitmap bitmap = BitmapFactory.decodeStream(is, null, null);
-                    is.close();
+                    if(bitmap == null) bitmap = BitmapFactory.decodeStream(is, null, null);
 
                     Bitmap rotatedBitmap = rotateImage(bitmap, orientation);
+                    if(bitmap != rotatedBitmap) bitmap.recycle();
+                    bitmap = rotatedBitmap;
+                }
 
-                    bitmap.recycle();
-
+                if(bitmap != null) {
                     // Here we perform conversion with data loss, but it seems better than handling orientation in JavaScript.
                     // Converting to PNG can be an option to prevent data loss, but in price of very large files.
-                    byte[] bytes = getJpegBytesFromBitmap(rotatedBitmap, 1.0); // minimize data loss with 1.0 quality
-
+                    byte[] bytes = getJpegBytesFromBitmap(bitmap, 1.0); // minimize data loss with 1.0 quality
+                    is.close();
                     is = new ByteArrayInputStream(bytes);
+
+                    bitmap.recycle();
                 }
             }
 
@@ -229,7 +256,11 @@ public class PhotoLibraryService {
     }
 
     public PictureData getPhoto(Context context, String photoId) throws IOException {
-        PictureAsStream pictureAsStream = getPhotoAsStream(context, photoId);
+        return getPhoto(context, photoId, null, null);
+
+    }
+    public PictureData getPhoto(Context context, String photoId, Integer maxWidth, Integer maxHeight) throws IOException {
+        PictureAsStream pictureAsStream = getPhotoAsStream(context, photoId, maxWidth, maxHeight);
 
         byte[] bytes = readBytes(pictureAsStream.getStream());
         pictureAsStream.getStream().close();
@@ -791,6 +822,69 @@ public class PhotoLibraryService {
 
         void run(JSONObject result);
 
+    }
+
+    /**
+     * https://gist.github.com/vxhviet/873d142b41217739a1302d337b7285ba
+     * @param bitmap the Bitmap to be scaled
+     * @param threshold the maxium dimension (either width or height) of the scaled bitmap
+     * @param isNecessaryToKeepOrig is it necessary to keep the original bitmap? If not recycle the original bitmap to prevent memory leak.
+     * */
+    public static Bitmap getScaledDownBitmap(Bitmap bitmap, int threshold, boolean isNecessaryToKeepOrig){
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+        int newWidth = width;
+        int newHeight = height;
+
+        if(width > height && width > threshold){
+            newWidth = threshold;
+            newHeight = (int)(height * (float)newWidth/width);
+        }
+
+        if(width > height && width <= threshold){
+            //the bitmap is already smaller than our required dimension, no need to resize it
+            return bitmap;
+        }
+
+        if(width < height && height > threshold){
+            newHeight = threshold;
+            newWidth = (int)(width * (float)newHeight/height);
+        }
+
+        if(width < height && height <= threshold){
+            //the bitmap is already smaller than our required dimension, no need to resize it
+            return bitmap;
+        }
+
+        if(width == height && width > threshold){
+            newWidth = threshold;
+            newHeight = newWidth;
+        }
+
+        if(width == height && width <= threshold){
+            //the bitmap is already smaller than our required dimension, no need to resize it
+            return bitmap;
+        }
+
+        return getResizedBitmap(bitmap, newWidth, newHeight, isNecessaryToKeepOrig);
+    }
+
+    private static Bitmap getResizedBitmap(Bitmap bm, int newWidth, int newHeight, boolean isNecessaryToKeepOrig) {
+        int width = bm.getWidth();
+        int height = bm.getHeight();
+        float scaleWidth = ((float) newWidth) / width;
+        float scaleHeight = ((float) newHeight) / height;
+        // CREATE A MATRIX FOR THE MANIPULATION
+        Matrix matrix = new Matrix();
+        // RESIZE THE BIT MAP
+        matrix.postScale(scaleWidth, scaleHeight);
+
+        // "RECREATE" THE NEW BITMAP
+        Bitmap resizedBitmap = Bitmap.createBitmap(bm, 0, 0, width, height, matrix, false);
+        if(!isNecessaryToKeepOrig){
+            bm.recycle();
+        }
+        return resizedBitmap;
     }
 
 }

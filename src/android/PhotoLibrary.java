@@ -23,9 +23,9 @@ public class PhotoLibrary extends CordovaPlugin {
 
  public static final String PHOTO_LIBRARY_PROTOCOL = "cdvphotolibrary";
 
- public static final int DEFAULT_WIDTH = 512;
- public static final int DEFAULT_HEIGHT = 384;
- public static final double DEFAULT_QUALITY = 0.5;
+ public static final int DEFAULT_WIDTH = 150;
+ public static final int DEFAULT_HEIGHT = 150;
+ public static final double DEFAULT_QUALITY = 0.8;
 
  public static final String ACTION_GET_LIBRARY = "getLibrary";
  public static final String ACTION_GET_ALBUMS = "getAlbums";
@@ -147,6 +147,7 @@ public class PhotoLibrary extends CordovaPlugin {
        final JSONObject options = args.optJSONObject(1);
        final int thumbnailWidth = options.getInt("thumbnailWidth");
        final int thumbnailHeight = options.getInt("thumbnailHeight");
+       final boolean useCache = options.has("useCache") ? options.getBoolean("useCache") : true;
        final double quality = options.getDouble("quality");
 
        if (!cordova.hasPermission(READ_EXTERNAL_STORAGE)) {
@@ -154,7 +155,7 @@ public class PhotoLibrary extends CordovaPlugin {
         return;
        }
 
-       PhotoLibraryService.PictureData thumbnail = service.getThumbnail(getContext(), photoId, thumbnailWidth, thumbnailHeight, quality);
+       PhotoLibraryService.PictureData thumbnail = service.getThumbnail(getContext(), photoId, thumbnailWidth, thumbnailHeight, quality, useCache);
        callbackContext.sendPluginResult(createMultipartPluginResult(PluginResult.Status.OK, thumbnail));
 
       } catch (Exception e) {
@@ -178,7 +179,11 @@ public class PhotoLibrary extends CordovaPlugin {
         return;
        }
 
-       PhotoLibraryService.PictureData photo = service.getPhoto(getContext(), photoId);
+       final JSONObject options = args.optJSONObject(1);
+       final int maxWidth = options.has("maxWidth") ? options.getInt("maxWidth") : null;
+       final int maxHeight = options.has("maxHeight") ? options.getInt("maxHeight") : null;
+
+       PhotoLibraryService.PictureData photo = service.getPhoto(getContext(), photoId, maxWidth, maxHeight);
        callbackContext.sendPluginResult(createMultipartPluginResult(PluginResult.Status.OK, photo));
 
       } catch (Exception e) {
@@ -323,6 +328,14 @@ public class PhotoLibrary extends CordovaPlugin {
     throw new FileNotFoundException("Incorrect 'height' query parameter");
    }
 
+   String useCacheStr = origUri.getQueryParameter("useCache");
+   boolean useCache = true;
+   try {
+    useCache = useCacheStr == null || useCacheStr.isEmpty() ? true : Boolean.parseBoolean(useCacheStr);
+   } catch (NumberFormatException e) {
+    //throw new FileNotFoundException("Incorrect 'height' query parameter");
+   }
+
    String qualityStr = origUri.getQueryParameter("quality");
    double quality;
    try {
@@ -331,7 +344,7 @@ public class PhotoLibrary extends CordovaPlugin {
     throw new FileNotFoundException("Incorrect 'quality' query parameter");
    }
 
-   PhotoLibraryService.PictureData thumbnailData = service.getThumbnail(getContext(), photoId, width, height, quality);
+   PhotoLibraryService.PictureData thumbnailData = service.getThumbnail(getContext(), photoId, width, height, quality, useCache);
 
    if (thumbnailData == null) {
     throw new FileNotFoundException("Could not create thumbnail");

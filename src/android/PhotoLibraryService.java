@@ -68,20 +68,34 @@ class PictureCachedData extends CachedData {
 
     public byte[] loadBytes(Context context, String imageURL, String cleanUrl) throws IOException {
         Bitmap bitmap = null;
-        long startTime       = System.currentTimeMillis();
+        //long startTime       = System.currentTimeMillis();
 
         try {
+            //startTime = System.currentTimeMillis();
+
             bitmap = ThumbnailUtils.extractThumbnail(BitmapFactory.decodeFile(imageURL), width, height,
                     ThumbnailUtils.OPTIONS_RECYCLE_INPUT);
-            Log.d(TAG, "Extract thumbnail: " + (System.currentTimeMillis() - startTime));
 
-            startTime = System.currentTimeMillis();
-            bytes = getJpegBytesFromBitmap(bitmap, quality);
-            Log.d(TAG, "Get bytes from bitmap: " + (System.currentTimeMillis() - startTime));
+            if(bitmap == null) {
+                byte[] bytesEmpty = new byte[0];
+                return bytesEmpty;
+            }
 
-            startTime = System.currentTimeMillis();
+            //Log.d(TAG, "Extract thumbnail: " + (System.currentTimeMillis() - startTime));
+
+            int orientation = PhotoLibraryService.getURLOrientation(imageURL);
+            if(orientation > 1) {
+                Bitmap rotatedBitmap = PhotoLibraryService.rotateImage(bitmap, orientation);
+                if (bitmap != rotatedBitmap) bitmap.recycle();
+                bitmap = rotatedBitmap;
+            }
+
+            //startTime = System.currentTimeMillis();
             //this.cache.put(context, imageURL, bytes, directory);
-            Log.d(TAG, "Save bytes: " + (System.currentTimeMillis() - startTime));
+            //Log.d(TAG, "Save bytes: " + (System.currentTimeMillis() - startTime));
+
+            bytes = getJpegBytesFromBitmap(bitmap, quality);
+            //Log.d(TAG, "Get bytes from bitmap: " + (System.currentTimeMillis() - startTime));
 
             bitmap.recycle();
 
@@ -169,15 +183,32 @@ public class PhotoLibraryService {
     }
 
     public PictureData getThumbnail(Context context, String photoId, int thumbnailWidth, int thumbnailHeight, double quality, boolean useCache) {
-
         try {
             String imageURL = getImageURL(photoId);
-            PictureCachedData cachedData = new PictureCachedData(null, "jpeg", thumbnailWidth, thumbnailHeight, quality);
+            long imageid = getImageId(photoId);
+            if (imageid == -1 || imageURL == null) {
+                return getEmptyPicture();
+            }
 
-            CachedData data = cache.get(imageURL, "photos", cachedData, useCache);
-            return new PictureData(data.bytes, data.getMimeType());
+            Bitmap bitmap = MediaStore.Images.Thumbnails.getThumbnail(context.getContentResolver(), imageid, MediaStore.Images.Thumbnails.MINI_KIND, null);
 
-        } catch(IOException e) {
+            //Bitmap bitmap = ThumbnailUtils.createImageThumbnail(imageURL, MediaStore.Images.Thumbnails.MINI_KIND);
+            if (bitmap == null) {
+                return getEmptyPicture();
+            }
+
+            int orientation = PhotoLibraryService.getURLOrientation(imageURL);
+            if(orientation > 1) {
+                Bitmap rotatedBitmap = PhotoLibraryService.rotateImage(bitmap, orientation);
+                if (bitmap != rotatedBitmap) bitmap.recycle();
+                bitmap = rotatedBitmap;
+            }
+
+            byte[] bytes = getJpegBytesFromBitmap(bitmap, 1.0); // minimize data loss with 1.0 quality
+            bitmap.recycle();
+
+            return new PictureData(bytes, "image/jpeg");
+        } catch (IOException e) {
             return getEmptyPicture();
         }
     }
@@ -193,7 +224,7 @@ public class PhotoLibraryService {
     }
     public PictureAsStream getPhotoAsStream(Context context, String photoId, Integer maxWidth, Integer maxHeight) throws IOException {
         try {
-            int imageId = getImageId(photoId);
+            long imageId = getImageId(photoId);
             String imageURL = getImageURL(photoId);
 
             if (imageURL == null || imageId == -1) {
@@ -488,7 +519,7 @@ public class PhotoLibraryService {
         }
     }
 
-    private String queryMimeType(Context context, int imageId) {
+    private String queryMimeType(Context context, long imageId) {
 
         Cursor cursor = context.getContentResolver().query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
@@ -497,7 +528,7 @@ public class PhotoLibraryService {
                 },
                 MediaStore.MediaColumns._ID + "=?",
                 new String[] {
-                        Integer.toString(imageId)
+                        Long.toString(imageId)
                 }, null);
 
         if (cursor != null && cursor.moveToFirst()) {
@@ -599,7 +630,7 @@ public class PhotoLibraryService {
     }
 
     // photoId is in format "imageid;imageurl;[swap]"
-    private static int getImageId(String photoId) {
+    private static long getImageId(String photoId) {
         photoId = decodePhotoIdURL(photoId);
 
         if (photoId == null) return -1;
@@ -608,7 +639,7 @@ public class PhotoLibraryService {
         // try {
         //  Log.e("Part0", parts[0]);
         try {
-            return parts.length >= 1 ? Integer.parseInt(parts[0]) : -1;
+            return parts.length >= 1 ? Long.parseLong(parts[0]) : -1;
         } catch (Exception e) {
             return -1;
         }
@@ -628,10 +659,10 @@ public class PhotoLibraryService {
         return parts.length >= 2 ? parts[1] : null;
     }
 
-    private static int getImageOrientation(File imageFile) throws IOException {
+    public static int getURLOrientation(String url) throws IOException {
 
         try {
-            ExifInterface exif = new ExifInterface(imageFile.getAbsolutePath());
+            ExifInterface exif = new ExifInterface(url);
             int orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
 
             return orientation;
@@ -641,8 +672,12 @@ public class PhotoLibraryService {
 
     }
 
+    public static int getImageOrientation(File imageFile) throws IOException {
+        return getURLOrientation(imageFile.getAbsolutePath());
+    }
+
     // see http://www.daveperrett.com/articles/2012/07/28/exif-orientation-handling-is-a-ghetto/
-    private static Bitmap rotateImage(Bitmap source, int orientation) {
+    public static Bitmap rotateImage(Bitmap source, int orientation) {
 
         Matrix matrix = new Matrix();
 

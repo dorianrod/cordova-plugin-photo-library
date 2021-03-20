@@ -210,6 +210,8 @@ public class PhotoLibraryService {
             return new PictureData(bytes, "image/jpeg");
         } catch (IOException e) {
             return getEmptyPicture();
+        } catch (Exception e) {
+            return getEmptyPicture();
         }
     }
 
